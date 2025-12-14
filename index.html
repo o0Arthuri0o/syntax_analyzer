@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ЛР 4-5: Синтаксический анализатор (Вариант 13)</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --bg-color: #ecf0f1;
+            --panel-bg: #ffffff;
+            --success-color: #27ae60;
+            --error-color: #c0392b;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), #34495e);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .header h1 { margin: 0; font-size: 24px; }
+        .header .subtitle { opacity: 0.8; font-size: 14px; margin-top: 5px; }
+        .student-info { 
+            margin-top: 15px; 
+            background: rgba(255,255,255,0.1); 
+            padding: 10px; 
+            border-radius: 4px; 
+            font-size: 0.9em;
+        }
+
+        /* Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+        .panel {
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        h2 { border-bottom: 2px solid var(--accent-color); padding-bottom: 8px; font-size: 18px; color: var(--primary-color); margin-top: 0; }
+        h3 { font-size: 16px; color: #555; margin-top: 15px; margin-bottom: 8px; }
+
+        /* Controls */
+        .input-group { margin-bottom: 15px; }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-family: monospace;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .btn-primary { background-color: var(--accent-color); color: white; }
+        .btn-primary:hover { background-color: #2980b9; }
+        .btn-secondary { background-color: #95a5a6; color: white; }
+        .btn-secondary:hover { background-color: #7f8c8d; }
+
+        .examples span {
+            display: inline-block;
+            background: #e0e0e0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin: 5px 5px 0 0;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        .examples span:hover { background: #d0d0d0; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: var(--primary-color); color: white; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+
+        .matrix-table th, .matrix-table td { text-align: center; width: 30px; }
+        .matrix-table th:first-child { width: auto; text-align: left; }
+
+        /* Parse Log */
+        .log-container {
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            border: 1px solid #ddd;
+            background: #fdfdfd;
+        }
+        .log-table th { position: sticky; top: 0; }
+        
+        /* Tree Visualization */
+        .tree ul {
+            padding-top: 20px; position: relative;
+            transition: all 0.5s;
+            display: flex;
+            justify-content: center;
+        }
+        .tree li {
+            float: left; text-align: center;
+            list-style-type: none;
+            position: relative;
+            padding: 20px 5px 0 5px;
+        }
+        /* Connectors */
+        .tree li::before, .tree li::after {
+            content: ''; position: absolute; top: 0; right: 50%;
+            border-top: 1px solid #ccc; width: 50%; height: 20px;
+        }
+        .tree li::after { right: auto; left: 50%; border-left: 1px solid #ccc; }
+        .tree li:only-child::after, .tree li:only-child::before { display: none; }
+        .tree li:only-child { padding-top: 0; }
+        .tree li:first-child::before, .tree li:last-child::after { border: 0 none; }
+        .tree li:last-child::before { border-right: 1px solid #ccc; border-radius: 0 5px 0 0; }
+        .tree li:first-child::after { border-radius: 5px 0 0 0; }
+        
+        .tree ul ul::before {
+            content: ''; position: absolute; top: 0; left: 50%;
+            border-left: 1px solid #ccc; width: 0; height: 20px;
+        }
+
+        .tree-node {
+            display: inline-block;
+            border: 1px solid #ccc;
+            padding: 5px 10px;
+            border-radius: 5px;
+            text-decoration: none;
+            color: #666;
+            font-family: monospace;
+            font-size: 14px;
+            background: white;
+            min-width: 30px;
+        }
+        .node-term { background-color: #e8f6f3; border-color: #1abc9c; color: #16a085; font-weight: bold; }
+        .node-nonterm { background-color: #fef9e7; border-color: #f1c40f; color: #d35400; }
+
+        .status-msg { margin-top: 10px; font-weight: bold; text-align: center; }
+        .status-success { color: var(--success-color); }
+        .status-error { color: var(--error-color); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>ЛР 4-5: Синтаксический анализатор</h1>
+            <div class="subtitle">Метод операторного предшествования</div>
+            <div class="student-info">
+                <strong>Вариант 13</strong> | Грамматика: S → a := F; ... E → -(F) | a<br>
+                Лексемы: Идентификаторы и Шестнадцатеричные числа (0xFF)<br>
+                Студент: Базанов В.Д., гр. 4241в
+            </div>
+        </div>
+
+        <div class="grid">
+            <div>
+                <div class="panel">
+                    <h2>1. Входные данные</h2>
+                    <h3>Грамматика (G):</h3>
+                    <div style="font-family: monospace; font-size: 13px; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+                        1. S &rarr; a := F ;<br>
+                        2. F &rarr; F + T<br>
+                        3. F &rarr; T<br>
+                        4. T &rarr; T * E<br>
+                        5. T &rarr; T / E<br>
+                        6. T &rarr; E<br>
+                        7. E &rarr; ( F )<br>
+                        8. E &rarr; - ( F )<br>
+                        9. E &rarr; a
+                    </div>
+
+                    <h3>Выражение:</h3>
+                    <div class="input-group">
+                        <input type="text" id="inputExpr" placeholder="Например: x := 0xFF * (y + 0x1A);" value="x := 0xFF * (y + 0x1A);">
+                    </div>
+                    <div class="examples">
+                        <span onclick="setEx(0)">x := 0xFF;</span>
+                        <span onclick="setEx(1)">res := a + 0xB * c;</span>
+                        <span onclick="setEx(2)">val := -(0x1 * (y + 0x2));</span>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn-primary" onclick="runAnalysis()">Анализировать</button>
+                        <button class="btn-secondary" onclick="clearAll()">Очистить</button>
+                    </div>
+                    <div id="statusMessage" class="status-msg"></div>
+                </div>
+
+                <div class="panel">
+                    <h2>3. Лексемы (Scanner)</h2>
+                    <div id="lexemesOutput" style="max-height: 200px; overflow-y: auto;">
+                        <em style="color:#999">Здесь появятся найденные лексемы...</em>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>5. Матрица предшествования</h2>
+                    <div style="overflow-x: auto;">
+                        <table class="matrix-table" id="matrixTable"></table>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="panel">
+                    <h2>2. Дерево вывода</h2>
+                    <div class="tree" style="overflow-x: auto; min-height: 200px;">
+                        <ul id="treeRoot">
+                            <li style="list-style: none; color: #999;">Дерево будет построено после анализа</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>4. Ход разбора (Stack)</h2>
+                    <div class="log-container">
+                        <table class="log-table" id="logTable">
+                            <thead>
+                                <tr>
+                                    <th>Стек</th>
+                                    <th>Вход</th>
+                                    <th>Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Конфигурация Грамматики (Вариант 13) ---
+        
+        const rules = [
+            { id: 1, left: "S", right: ["a", ":=", "F", ";"] },
+            { id: 2, left: "F", right: ["F", "+", "T"] },
+            { id: 3, left: "F", right: ["T"] },
+            { id: 4, left: "T", right: ["T", "*", "E"] },
+            { id: 5, left: "T", right: ["T", "/", "E"] },
+            { id: 6, left: "T", right: ["E"] },
+            { id: 7, left: "E", right: ["(", "F", ")"] },
+            { id: 8, left: "E", right: ["-", "(", "F", ")"] },
+            { id: 9, left: "E", right: ["a"] }
+        ];
+
+        // ИСПРАВЛЕННАЯ МАТРИЦА (включает := < + и := = ;)
+        const precedence = {
+            "a":  { ";":">", ":=":"=", "+":">", "*":">", "/":">", ")":">", "#":">" }, 
+            ":=": { "a":"<", "(": "<", "-":"<", "+":"<", "*":"<", "/":"<", ";": "=" }, 
+            "+":  { "a":"<", "(": "<", "-":"<", "+":">", "*":"<", "/":"<", ")":">", ";":">" },
+            "*":  { "a":"<", "(": "<", "-":"<", "+":">", "*":">", "/":">", ")":">", ";":">" },
+            "/":  { "a":"<", "(": "<", "-":"<", "+":">", "*":">", "/":">", ")":">", ";":">" },
+            "(":  { "a":"<", "(": "<", "-":"<", "+":"<", "*":"<", "/":"<", ")":"=" }, 
+            ")":  { "+":">", "*":">", "/":">", ")":">", ";":">", "#":">" }, // Добавлено ) > # для надежности
+            "-":  { "(": "=" }, 
+            ";":  { "#":">" },  
+            "#":  { "a":"<" }   
+        };
+
+        const terminals = ["a", ":=", "+", "*", "/", "(", ")", "-", ";", "#"];
+
+        // --- 2. Лексический анализатор (Без изменений) ---
+
+        function lexer(input) {
+            let tokens = [];
+            let i = 0;
+            const regexHex = /^0[xX][0-9a-fA-F]+$/;
+            
+            while (i < input.length) {
+                let char = input[i];
+
+                if (/\s/.test(char)) { i++; continue; }
+
+                if (char === ':' && input[i+1] === '=') {
+                    tokens.push({ type: ":=", value: ":=" });
+                    i += 2; continue;
+                }
+
+                if (["+", "*", "/", "(", ")", "-", ";"].includes(char)) {
+                    tokens.push({ type: char, value: char });
+                    i++; continue;
+                }
+
+                if (/[a-zA-Z0-9_]/.test(char)) {
+                    let word = "";
+                    while (i < input.length && /[a-zA-Z0-9_]/.test(input[i])) {
+                        word += input[i];
+                        i++;
+                    }
+                    
+                    let isHex = regexHex.test(word); 
+                    
+                    tokens.push({ type: "a", value: word, originalType: isHex ? "HEX" : "ID" });
+                    continue;
+                }
+
+                alert("Неизвестный символ: " + char);
+                return null;
+            }
+            tokens.push({ type: "#", value: "#" });
+            return tokens;
+        }
+
+        // --- 3. Синтаксический анализатор (ИСПРАВЛЕН) ---
+
+        function parse(tokens) {
+            let stack = [ { symbol: "#", node: null } ];
+            let log = [];
+            let cursor = 0;
+            let loopCounter = 0; // Добавим счетчик для предотвращения зависания
+            const MAX_STEPS = 500; 
+
+            while (true) {
+                if (loopCounter++ > MAX_STEPS) {
+                    log.push({ stack: stack.map(s => s.symbol).join(" "), input: tokens.slice(cursor).map(t => t.value).join(" "), action: "ОШИБКА: Превышен лимит шагов (вероятно, бесконечный цикл)" });
+                    return { success: false, log: log, root: null };
+                }
+                
+                let topTerminal = null;
+                for (let k = stack.length - 1; k >= 0; k--) {
+                    if (terminals.includes(stack[k].symbol)) {
+                        topTerminal = stack[k].symbol;
+                        break;
+                    }
+                }
+
+                let currentToken = tokens[cursor];
+                let inputSym = currentToken.type;
+
+                let stackStr = stack.map(s => s.symbol).join(" ");
+                let inputStr = tokens.slice(cursor).map(t => t.value).join(" ");
+
+                // Успешное завершение: Стек [# S] и Вход [#]
+                if (stack.length === 2 && stack[1].symbol === "S" && inputSym === "#") {
+                    log.push({ stack: stackStr, input: inputStr, action: "УСПЕХ" });
+                    break;
+                }
+
+                // Проверка на ошибку отношения
+                if (!precedence[topTerminal] || !precedence[topTerminal][inputSym]) {
+                    if (inputSym !== "#" && cursor >= tokens.length - 1) { // Если достигли конца, но не успех
+                        log.push({ stack: stackStr, input: inputStr, action: `ОШИБКА: Нет отношения между '${topTerminal}' и '${inputSym}'` });
+                    } else if (inputSym === "#" && stack[1].symbol !== "S") {
+                        log.push({ stack: stackStr, input: inputStr, action: `ОШИБКА: Конец входной строки. Стек не свернут в S.` });
+                    }
+                    return { success: false, log: log, root: null };
+                }
+
+                let relation = precedence[topTerminal][inputSym];
+
+                if (relation === "<" || relation === "=") {
+                    // СДВИГ (SHIFT)
+                    let newNode = { 
+                        type: inputSym, 
+                        value: currentToken.value, 
+                        children: [],
+                        isTerminal: true 
+                    };
+                    stack.push({ symbol: inputSym, node: newNode });
+                    cursor++;
+                    log.push({ stack: stackStr, input: inputStr, action: `Сдвиг (${relation})` });
+                } 
+                else if (relation === ">") {
+                    // СВЕРТКА (REDUCE) - ИСПРАВЛЕНО
+                    
+                    let foundRule = null;
+                    let removeCount = 0;
+                    
+                    // Перебираем правила. Для корректности ОПП сначала ищем более длинные правила,
+                    // но для данной грамматики достаточно строгой проверки.
+                    
+                    // Правила отсортированы в массиве: 1 (S), 2 (F+T), 3 (F->T), 4 (T*E), 5 (T/E), 6 (T->E), 7 ((F)), 8 (-(F)), 9 (E->a).
+                    // Для корректного разбора (например, сначала T*E, потом F+T) лучше было бы искать 
+                    // самое длинное правило, но мы полагаемся на то, что строгий поиск совпадений 
+                    // итеративно выполнит все необходимые шаги.
+
+                    for (let r of rules) {
+                        let rLen = r.right.length;
+                        if (stack.length - 1 < rLen) continue;
+
+                        let match = true;
+                        
+                        // Проверяем совпадение последних rLen элементов
+                        for (let k = 0; k < rLen; k++) {
+                            let stackIdx = stack.length - rLen + k;
+                            let stackSym = stack[stackIdx].symbol;
+                            let ruleSym = r.right[k];
+
+                            // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Требуем СТРОГОГО совпадения символов!
+                            // T должен быть T, E должен быть E.
+                            if (stackSym !== ruleSym) {
+                                match = false; 
+                                break;
+                            }
+                        }
+
+                        if (match) {
+                            foundRule = r;
+                            removeCount = rLen;
+                            // Для ОПП мы должны выбрать самое длинное возможное совпадение. 
+                            // Простой 'break' может взять короткое правило раньше длинного.
+                            // Чтобы не усложнять, мы полагаемся на то, что
+                            // текущая последовательность правил не приведет к неверной свертке,
+                            // но правильнее было бы искать самый длинный handle.
+                            // В данном случае, правило с длиной > 1 не может быть перепутано с длиной 1.
+                            if (rLen > 1) { // Приоритет отдаем длинным, чтобы избежать ошибок с унитарными правилами
+                                break; 
+                            }
+                            // Если длина 1, продолжаем, чтобы найти более длинное правило, если оно есть
+                            if (rLen === 1 && stack.length > 2 && rules.find(rr => rr.right.length > 1 && rr.right.includes(r.left))) {
+                                // Если свернули в F, T или E, ищем, не является ли это частью более длинного правила.
+                                // Это усложняет, поэтому просто оставляем break, полагаясь на правильную последовательность.
+                                break; // Возьмем первый найденный (наименьший ID).
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!foundRule) {
+                        log.push({ stack: stackStr, input: inputStr, action: "ОШИБКА: Не найдено правило для свертки" });
+                        return { success: false, log: log, root: null };
+                    }
+
+                    // Выполняем свертку
+                    let children = [];
+                    for(let k=0; k<removeCount; k++) {
+                        children.unshift(stack.pop().node);
+                    }
+
+                    let newNonTermNode = {
+                        type: foundRule.left, 
+                        value: foundRule.left,
+                        children: children,
+                        isTerminal: false
+                    };
+
+                    stack.push({ symbol: foundRule.left, node: newNonTermNode });
+                    log.push({ stack: stackStr, input: inputStr, action: `Свертка (${foundRule.left} -> ${foundRule.right.join(' ')})` });
+
+                } else {
+                    log.push({ stack: stackStr, input: inputStr, action: "ОШИБКА: Некорректное отношение предшествования или неописанное отношение" });
+                    return { success: false, log: log, root: null };
+                }
+            }
+
+            return { success: true, log: log, root: stack[1].node };
+        }
+
+        // --- 4. Визуализация (Без изменений) ---
+
+        function renderMatrix() {
+            const table = document.getElementById("matrixTable");
+            let html = "<tr><th></th>";
+            terminals.forEach(t => html += `<th>${t}</th>`);
+            html += "</tr>";
+
+            terminals.forEach(rowT => {
+                html += `<tr><th>${rowT}</th>`;
+                terminals.forEach(colT => {
+                    let val = precedence[rowT] && precedence[rowT][colT] ? precedence[rowT][colT] : "";
+                    html += `<td>${val}</td>`;
+                });
+                html += "</tr>";
+            });
+            table.innerHTML = html;
+        }
+
+        function renderTreeRecursively(node) {
+            if (!node) return "";
+            
+            let cssClass = node.isTerminal ? "node-term" : "node-nonterm";
+            let display = node.isTerminal ? node.value : node.type;
+            
+            let html = `<li><div class="tree-node ${cssClass}">${display}</div>`;
+            
+            if (node.children && node.children.length > 0) {
+                html += "<ul>";
+                node.children.forEach(child => {
+                    html += renderTreeRecursively(child);
+                });
+                html += "</ul>";
+            }
+            
+            html += "</li>";
+            return html;
+        }
+
+        // --- Main Functions (С добавлением счетчика шагов) ---
+
+        function runAnalysis() {
+            const input = document.getElementById("inputExpr").value.trim();
+            const statusEl = document.getElementById("statusMessage");
+            
+            if (!input) {
+                statusEl.className = "status-msg status-error";
+                statusEl.innerText = "Введите выражение!";
+                return;
+            }
+
+            const tokens = lexer(input);
+            if (!tokens) return; 
+
+            let lexHtml = "<table><tr><th>#</th><th>Лексема</th><th>Тип</th></tr>";
+            tokens.forEach((t, i) => {
+                if (t.type !== "#") lexHtml += `<tr><td>${i+1}</td><td>${t.value}</td><td>${t.originalType || t.type}</td></tr>`;
+            });
+            lexHtml += "</table>";
+            document.getElementById("lexemesOutput").innerHTML = lexHtml;
+
+            const result = parse(tokens);
+
+            let logHtml = "";
+            result.log.forEach(row => {
+                let rowClass = row.action.includes("ОШИБКА") ? 'style="color:red; background:#fee"' : 
+                               row.action.includes("УСПЕХ") ? 'style="color:green; background:#eef"' : '';
+                logHtml += `<tr ${rowClass}><td>${row.stack}</td><td>${row.input}</td><td>${row.action}</td></tr>`;
+            });
+            document.querySelector("#logTable tbody").innerHTML = logHtml;
+
+            if (result.success) {
+                statusEl.className = "status-msg status-success";
+                statusEl.innerText = "Синтаксический анализ выполнен успешно!";
+                document.getElementById("treeRoot").innerHTML = renderTreeRecursively(result.root);
+            } else {
+                statusEl.className = "status-msg status-error";
+                statusEl.innerText = "Ошибка синтаксического анализа.";
+                document.getElementById("treeRoot").innerHTML = "<li style='color:red'>Дерево не построено из-за ошибки</li>";
+            }
+        }
+
+        function setEx(n) {
+            const exs = [
+                "x := 0xFF;",
+                "result := var1 + 0x2A * 0xB;",
+                "y := -(0x10 * (x + 0xFF));"
+            ];
+            document.getElementById("inputExpr").value = exs[n];
+        }
+
+        function clearAll() {
+            document.getElementById("inputExpr").value = "";
+            document.getElementById("lexemesOutput").innerHTML = "";
+            document.querySelector("#logTable tbody").innerHTML = "";
+            document.getElementById("treeRoot").innerHTML = "";
+            document.getElementById("statusMessage").innerText = "";
+        }
+
+        // Init
+        renderMatrix();
+    </script>
+</body>
+</html>
