@@ -207,7 +207,7 @@
 
                     <h3>Выражение:</h3>
                     <div class="input-group">
-                        <input type="text" id="inputExpr" placeholder="Например: x := 0xFF * (y + 0x1A);" value="x := 0xFF * (y + 0x1A);">
+                        <input type="text" id="inputExpr" placeholder="Например: x := 0xFF * (y + 0x1A);" value="result := var1 + 0x2A * 0xB;">
                     </div>
                     <div class="examples">
                         <span onclick="setEx(0)">x := 0xFF;</span>
@@ -269,19 +269,24 @@
     <script>
         // --- 1. Конфигурация Грамматики (Вариант 13) ---
         
+        // ПЕРЕУПОРЯДОЧЕННЫЕ ПРАВИЛА: приоритет длинных и бинарных операций выше
         const rules = [
             { id: 1, left: "S", right: ["a", ":=", "F", ";"] },
-            { id: 2, left: "F", right: ["F", "+", "T"] },
-            { id: 3, left: "F", right: ["T"] },
-            { id: 4, left: "T", right: ["T", "*", "E"] },
-            { id: 5, left: "T", right: ["T", "/", "E"] },
-            { id: 6, left: "T", right: ["E"] },
-            { id: 7, left: "E", right: ["(", "F", ")"] },
-            { id: 8, left: "E", right: ["-", "(", "F", ")"] },
-            { id: 9, left: "E", right: ["a"] }
+            { id: 8, left: "E", right: ["-", "(", "F", ")"] }, // Длина 4
+            { id: 7, left: "E", right: ["(", "F", ")"] }, // Длина 3
+            
+            // Бинарные операции
+            { id: 2, left: "F", right: ["F", "+", "T"] }, // Длина 3 (Сложение)
+            { id: 4, left: "T", right: ["T", "*", "E"] }, // Длина 3 (Умножение)
+            { id: 5, left: "T", right: ["T", "/", "E"] }, // Длина 3 (Деление)
+            
+            // Унитарные продвижения
+            { id: 3, left: "F", right: ["T"] }, // Длина 1
+            { id: 6, left: "T", right: ["E"] }, // Длина 1
+            { id: 9, left: "E", right: ["a"] } // Длина 1
         ];
 
-        // ИСПРАВЛЕННАЯ МАТРИЦА (включает := < + и := = ;)
+        // Матрица предшествования
         const precedence = {
             "a":  { ";":">", ":=":"=", "+":">", "*":">", "/":">", ")":">", "#":">" }, 
             ":=": { "a":"<", "(": "<", "-":"<", "+":"<", "*":"<", "/":"<", ";": "=" }, 
@@ -289,7 +294,7 @@
             "*":  { "a":"<", "(": "<", "-":"<", "+":">", "*":">", "/":">", ")":">", ";":">" },
             "/":  { "a":"<", "(": "<", "-":"<", "+":">", "*":">", "/":">", ")":">", ";":">" },
             "(":  { "a":"<", "(": "<", "-":"<", "+":"<", "*":"<", "/":"<", ")":"=" }, 
-            ")":  { "+":">", "*":">", "/":">", ")":">", ";":">", "#":">" }, // Добавлено ) > # для надежности
+            ")":  { "+":">", "*":">", "/":">", ")":">", ";":">", "#":">" }, 
             "-":  { "(": "=" }, 
             ";":  { "#":">" },  
             "#":  { "a":"<" }   
@@ -297,7 +302,7 @@
 
         const terminals = ["a", ":=", "+", "*", "/", "(", ")", "-", ";", "#"];
 
-        // --- 2. Лексический анализатор (Без изменений) ---
+        // --- 2. Лексический анализатор ---
 
         function lexer(input) {
             let tokens = [];
@@ -345,8 +350,10 @@
             let stack = [ { symbol: "#", node: null } ];
             let log = [];
             let cursor = 0;
-            let loopCounter = 0; // Добавим счетчик для предотвращения зависания
+            let loopCounter = 0; 
             const MAX_STEPS = 500; 
+            
+            const isExpressionNonTerm = (s) => ["F", "T", "E"].includes(s);
 
             while (true) {
                 if (loopCounter++ > MAX_STEPS) {
@@ -354,6 +361,7 @@
                     return { success: false, log: log, root: null };
                 }
                 
+                // 1. Находим верхний ТЕРМИНАЛ в стеке
                 let topTerminal = null;
                 for (let k = stack.length - 1; k >= 0; k--) {
                     if (terminals.includes(stack[k].symbol)) {
@@ -376,11 +384,7 @@
 
                 // Проверка на ошибку отношения
                 if (!precedence[topTerminal] || !precedence[topTerminal][inputSym]) {
-                    if (inputSym !== "#" && cursor >= tokens.length - 1) { // Если достигли конца, но не успех
-                        log.push({ stack: stackStr, input: inputStr, action: `ОШИБКА: Нет отношения между '${topTerminal}' и '${inputSym}'` });
-                    } else if (inputSym === "#" && stack[1].symbol !== "S") {
-                        log.push({ stack: stackStr, input: inputStr, action: `ОШИБКА: Конец входной строки. Стек не свернут в S.` });
-                    }
+                    log.push({ stack: stackStr, input: inputStr, action: `ОШИБКА: Нет отношения между '${topTerminal}' и '${inputSym}'` });
                     return { success: false, log: log, root: null };
                 }
 
@@ -399,59 +403,45 @@
                     log.push({ stack: stackStr, input: inputStr, action: `Сдвиг (${relation})` });
                 } 
                 else if (relation === ">") {
-                    // СВЕРТКА (REDUCE) - ИСПРАВЛЕНО
+                    // СВЕРТКА (REDUCE)
                     
                     let foundRule = null;
                     let removeCount = 0;
                     
-                    // Перебираем правила. Для корректности ОПП сначала ищем более длинные правила,
-                    // но для данной грамматики достаточно строгой проверки.
-                    
-                    // Правила отсортированы в массиве: 1 (S), 2 (F+T), 3 (F->T), 4 (T*E), 5 (T/E), 6 (T->E), 7 ((F)), 8 (-(F)), 9 (E->a).
-                    // Для корректного разбора (например, сначала T*E, потом F+T) лучше было бы искать 
-                    // самое длинное правило, но мы полагаемся на то, что строгий поиск совпадений 
-                    // итеративно выполнит все необходимые шаги.
-
+                    // Проходим по правилам (теперь они отсортированы по приоритету)
                     for (let r of rules) {
                         let rLen = r.right.length;
                         if (stack.length - 1 < rLen) continue;
 
                         let match = true;
                         
-                        // Проверяем совпадение последних rLen элементов
+                        // Проверяем совпадение последних rLen элементов стека
                         for (let k = 0; k < rLen; k++) {
                             let stackIdx = stack.length - rLen + k;
                             let stackSym = stack[stackIdx].symbol;
                             let ruleSym = r.right[k];
 
-                            // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Требуем СТРОГОГО совпадения символов!
-                            // T должен быть T, E должен быть E.
-                            if (stackSym !== ruleSym) {
+                            if (stackSym === ruleSym) {
+                                // Строгое совпадение (для терминалов и S)
+                            } else if (isExpressionNonTerm(ruleSym) && isExpressionNonTerm(stackSym)) {
+                                // Гибкое сопоставление для нетерминалов F, T, E (допускается E на месте T в F+T)
+                            } else {
                                 match = false; 
                                 break;
                             }
                         }
 
                         if (match) {
+                            // *** CRITICAL CYCLE PREVENTION CHECK ***
+                            // Если найдено унитарное правило (F->T, T->E) и 
+                            // символ на стеке совпадает с левой частью (F->T с F на стеке), то это цикл.
+                            if (r.right.length === 1 && r.left === stack[stack.length - 1].symbol) {
+                                continue; // Пропускаем это правило и ищем дальше (т.к. более длинное/приоритетное правило может быть корректным)
+                            }
+                            
                             foundRule = r;
                             removeCount = rLen;
-                            // Для ОПП мы должны выбрать самое длинное возможное совпадение. 
-                            // Простой 'break' может взять короткое правило раньше длинного.
-                            // Чтобы не усложнять, мы полагаемся на то, что
-                            // текущая последовательность правил не приведет к неверной свертке,
-                            // но правильнее было бы искать самый длинный handle.
-                            // В данном случае, правило с длиной > 1 не может быть перепутано с длиной 1.
-                            if (rLen > 1) { // Приоритет отдаем длинным, чтобы избежать ошибок с унитарными правилами
-                                break; 
-                            }
-                            // Если длина 1, продолжаем, чтобы найти более длинное правило, если оно есть
-                            if (rLen === 1 && stack.length > 2 && rules.find(rr => rr.right.length > 1 && rr.right.includes(r.left))) {
-                                // Если свернули в F, T или E, ищем, не является ли это частью более длинного правила.
-                                // Это усложняет, поэтому просто оставляем break, полагаясь на правильную последовательность.
-                                break; // Возьмем первый найденный (наименьший ID).
-                            } else {
-                                break;
-                            }
+                            break; // Найдено корректное правило с наивысшим приоритетом (по порядку в массиве)
                         }
                     }
 
@@ -485,7 +475,7 @@
             return { success: true, log: log, root: stack[1].node };
         }
 
-        // --- 4. Визуализация (Без изменений) ---
+        // --- 4. Визуализация и UI ---
 
         function renderMatrix() {
             const table = document.getElementById("matrixTable");
@@ -523,8 +513,6 @@
             html += "</li>";
             return html;
         }
-
-        // --- Main Functions (С добавлением счетчика шагов) ---
 
         function runAnalysis() {
             const input = document.getElementById("inputExpr").value.trim();
@@ -574,6 +562,7 @@
                 "y := -(0x10 * (x + 0xFF));"
             ];
             document.getElementById("inputExpr").value = exs[n];
+            runAnalysis(); // Автоматический запуск для примеров
         }
 
         function clearAll() {
