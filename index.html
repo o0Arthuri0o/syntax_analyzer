@@ -224,13 +224,6 @@
                         <em style="color:#999">Здесь появятся найденные лексемы...</em>
                     </div>
                 </div>
-
-                <div class="panel">
-                    <h2>5. Матрица предшествования</h2>
-                    <div style="overflow-x: auto;">
-                        <table class="matrix-table" id="matrixTable"></table>
-                    </div>
-                </div>
             </div>
 
             <div>
@@ -555,8 +548,8 @@
         function setEx(n) {
             const exs = [
                 "x := 0xFF;",
-                "result := var1 + 0x2A * 0xB;",
-                "y := -(0x10 * (x + 0xFF));"
+                "res := a + 0xB * c;",
+                "val := -(0x1 * (y + 0x2));"
             ];
             document.getElementById("inputExpr").value = exs[n];
             runAnalysis(); // Автоматический запуск для примеров
